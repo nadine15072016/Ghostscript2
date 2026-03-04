@@ -1605,6 +1605,25 @@ tfoot td {
             await dbSet('notifLog', jsonString);
         }
         
+        // Fungsi untuk membersihkan localStorage lama jika quota penuh
+        function cleanupOldLocalStorage() {
+            console.log('Cleaning up old localStorage data...');
+            const keysToRemove = ['belui_padiSawahData', 'belui_padiSawahTargets', 
+                                  'belui_padiSawahHistory', 'belui_padiSawahNotifLog'];
+            keysToRemove.forEach(key => {
+                try {
+                    localStorage.removeItem(key);
+                    console.log('Removed:', key);
+                } catch (e) {
+                    console.error('Error removing', key, ':', e);
+                }
+            });
+            console.log('Cleanup complete. localStorage space freed.');
+        }
+        
+        // Expose cleanup function to window for manual use
+        window.cleanupOldLocalStorage = cleanupOldLocalStorage;
+        
         // ==============================================
         // === End of IndexedDB Helper Functions ===
         // ==============================================
@@ -2678,23 +2697,25 @@ document.addEventListener('DOMContentLoaded', function(){
                     const status = document.getElementById('undoRedoStatus');
                     if (status) status.textContent = `Undo: ${undoStack.length} | Redo: ${redoStack.length}`;
                 }
-                document.getElementById('undoBtn').addEventListener('click', function() {
+                document.getElementById('undoBtn').addEventListener('click', async function() {
                     if (undoStack.length === 0) return;
                     redoStack.push(JSON.stringify(dataStore));
                     dataStore = JSON.parse(undoStack.pop());
                     window.dataStore = dataStore;
-                    localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
+                    // Save to IndexedDB instead of localStorage
+                    await dbSet('belui_padiSawahData', dataStore);
                     renderTable();
                     updateStats();
                     showToast('Undo perubahan data.', 'success');
                     updateUndoRedoStatus();
                 });
-                document.getElementById('redoBtn').addEventListener('click', function() {
+                document.getElementById('redoBtn').addEventListener('click', async function() {
                     if (redoStack.length === 0) return;
                     undoStack.push(JSON.stringify(dataStore));
                     dataStore = JSON.parse(redoStack.pop());
                     window.dataStore = dataStore;
-                    localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
+                    // Save to IndexedDB instead of localStorage
+                    await dbSet('belui_padiSawahData', dataStore);
                     renderTable();
                     updateStats();
                     showToast('Redo perubahan data.', 'success');
@@ -3314,13 +3335,21 @@ document.addEventListener('DOMContentLoaded', function(){
                     const desaInput = document.getElementById('inputDesa');
                     if (kecamatanInput) {
                         kecamatanInput.addEventListener('input', function() {
-                            localStorage.setItem('belui_kecamatan', this.value);
+                            try {
+                                localStorage.setItem('belui_kecamatan', this.value);
+                            } catch (e) {
+                                console.warn('localStorage quota exceeded for kecamatan:', e);
+                            }
                             updatePrintInfo();
                         });
                     }
                     if (desaInput) {
                         desaInput.addEventListener('input', function() {
-                            localStorage.setItem('belui_desa', this.value);
+                            try {
+                                localStorage.setItem('belui_desa', this.value);
+                            } catch (e) {
+                                console.warn('localStorage quota exceeded for desa:', e);
+                            }
                             updatePrintInfo();
                         });
                     }

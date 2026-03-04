@@ -1033,12 +1033,12 @@ tfoot td {
                 <div class="target-2row" style="display:grid;grid-template-rows:auto;gap:10px 0;align-items:end;">
                     <div style="display:grid;grid-template-columns:110px 110px 1fr 1fr 1fr auto;gap:10px;align-items:end;">
                         <div class="form-group" style="min-width:0;">
-                            <label for="inputKecamatan">Kecamatan</label>
-                            <input type="text" id="inputKecamatan" placeholder="Kecamatan" style="width:100%;max-width:110px;">
+                            <label for="inputKecamatan">Kecamatan <span style="color:#27ae60;font-size:10px;">●</span></label>
+                            <input type="text" id="inputKecamatan" placeholder="Kecamatan" title="Data akan tersimpan otomatis" style="width:100%;max-width:110px;">
                         </div>
                         <div class="form-group" style="min-width:0;">
-                            <label for="inputDesa">Desa</label>
-                            <input type="text" id="inputDesa" placeholder="Desa" style="width:100%;max-width:110px;">
+                            <label for="inputDesa">Desa <span style="color:#27ae60;font-size:10px;">●</span></label>
+                            <input type="text" id="inputDesa" placeholder="Desa" title="Data akan tersimpan otomatis" style="width:100%;max-width:110px;">
                         </div>
                         <div class="form-group">
                             <span class="target-label">Bulan &amp; Tahun</span>
@@ -1260,36 +1260,124 @@ tfoot td {
                                 </div>
                                 <button class="control-btn btn-ghost" onclick="backupData()" title="Backup Data" style="padding:8px 10px;">💾 <span style="font-size:13px;vertical-align:middle;">Backup</span></button>
                                 <button class="control-btn btn-ghost" onclick="document.getElementById('restoreInput').click()" title="Restore Data" style="padding:8px 10px;">🔄 <span style="font-size:13px;vertical-align:middle;">Restore</span></button>
-                                <input type="file" id="restoreInput" accept="application/json" style="display:none" onchange="restoreData(event)">
+                                <input type="file" id="restoreInput" accept="application/json,.json" style="display:none" onchange="restoreData(event)">
 
 
                                 <script>
                                 // --- FUNGSI RESTORE DATA ---
-                                window.restoreData = function(event) {
+                                window.restoreData = async function(event) {
                                     const file = event.target.files[0];
-                                    if (!file) return;
+                                    if (!file) {
+                                        console.log('Tidak ada file yang dipilih');
+                                        return;
+                                    }
+                                    
+                                    console.log('File dipilih:', file.name, 'Size:', file.size, 'Type:', file.type);
+                                    
+                                    // Validasi ekstensi file
+                                    const fileName = file.name.toLowerCase();
+                                    if (!fileName.endsWith('.json')) {
+                                        showToast('File harus berformat JSON (.json)', 'error');
+                                        event.target.value = '';
+                                        return;
+                                    }
+                                    
                                     const reader = new FileReader();
-                                    reader.onload = function(e) {
+                                    reader.onload = async function(e) {
                                         try {
-                                            const data = JSON.parse(e.target.result);
-                                            if (typeof data !== 'object' || Array.isArray(data)) throw new Error('Format backup tidak valid');
-                                            if (!data.padiSawahData || !data.padiSawahTargets) throw new Error('File backup tidak valid.');
+                                            console.log('Membaca file...');
+                                            const fileContent = e.target.result;
+                                            console.log('Ukuran file:', (fileContent.length / 1024).toFixed(2), 'KB');
+                                            
+                                            const data = JSON.parse(fileContent);
+                                            console.log('JSON parsed successfully. Keys:', Object.keys(data));
+                                            
+                                            // Validasi struktur data
+                                            if (typeof data !== 'object' || Array.isArray(data)) {
+                                                throw new Error('Format backup tidak valid - bukan object JSON');
+                                            }
+                                            
+                                            if (!data.padiSawahData) {
+                                                throw new Error('File backup tidak valid - tidak ada padiSawahData');
+                                            }
+                                            
+                                            if (!data.padiSawahTargets) {
+                                                throw new Error('File backup tidak valid - tidak ada padiSawahTargets');
+                                            }
+                                            
+                                            // Validasi bahwa padiSawahData dan padiSawahTargets adalah string JSON
+                                            if (typeof data.padiSawahData !== 'string') {
+                                                throw new Error('Format padiSawahData tidak valid - harus berupa string JSON');
+                                            }
+                                            if (typeof data.padiSawahTargets !== 'string') {
+                                                throw new Error('Format padiSawahTargets tidak valid - harus berupa string JSON');
+                                            }
+                                            
+                                            console.log('padiSawahData size:', (data.padiSawahData.length / 1024).toFixed(2), 'KB');
+                                            console.log('padiSawahTargets size:', (data.padiSawahTargets.length / 1024).toFixed(2), 'KB');
+                                            
+                                            // Test parse untuk memastikan valid JSON
+                                            const testData = JSON.parse(data.padiSawahData);
+                                            const testTargets = JSON.parse(data.padiSawahTargets);
+                                            console.log('Data entries:', Object.keys(testData).length);
+                                            console.log('Target entries:', Object.keys(testTargets).length);
+                                            
                                             if (confirm('Data lama akan diganti dengan data backup. Lanjutkan?')) {
-                                                localStorage.setItem('belui_padiSawahData', data.padiSawahData);
-                                                localStorage.setItem('belui_padiSawahTargets', data.padiSawahTargets);
-                                                // Sinkronkan dataStore global
-                                                window.dataStore = JSON.parse(data.padiSawahData);
-                                                // Pastikan fungsi-fungsi ini dipanggil setelah dataStore diupdate
-                                                if (typeof renderTable === 'function') renderTable();
-                                                if (typeof updateStats === 'function') updateStats();
-                                                if (typeof populateFilters === 'function') populateFilters();
-                                                showToast('Data berhasil direstore!', 'success');
+                                                console.log('User confirmed restore');
+                                                
+                                                try {
+                                                    // Simpan ke IndexedDB - lebih besar kapasitasnya
+                                                    await setPadiSawahData(data.padiSawahData);
+                                                    await setPadiSawahTargets(data.padiSawahTargets);
+                                                    console.log('Data saved to IndexedDB');
+                                                    
+                                                    // Sinkronkan dataStore global dengan parse dari string
+                                                    window.dataStore = JSON.parse(data.padiSawahData);
+                                                    dataStore = window.dataStore;
+                                                    console.log('dataStore synced. Keys count:', Object.keys(window.dataStore).length);
+                                                    
+                                                    // Pastikan fungsi-fungsi ini dipanggil setelah dataStore diupdate
+                                                    if (typeof renderTable === 'function') {
+                                                        renderTable();
+                                                        console.log('renderTable() called');
+                                                    }
+                                                    if (typeof updateStats === 'function') {
+                                                        updateStats();
+                                                        console.log('updateStats() called');
+                                                    }
+                                                    if (typeof populateFilters === 'function') {
+                                                        populateFilters();
+                                                        console.log('populateFilters() called');
+                                                    }
+                                                    
+                                                    // Refresh timeline
+                                                    if (typeof renderTimelineList === 'function') {
+                                                        renderTimelineList();
+                                                        console.log('renderTimelineList() called');
+                                                    }
+                                                    
+                                                    showToast('Data berhasil direstore! Total: ' + Object.keys(window.dataStore).length + ' entri', 'success');
+                                                    console.log('Restore completed successfully');
+                                                } catch (storageErr) {
+                                                    console.error('Storage error:', storageErr);
+                                                    showToast('Gagal menyimpan data: ' + storageErr.message, 'error');
+                                                }
+                                            } else {
+                                                console.log('User cancelled restore');
                                             }
                                         } catch (err) {
+                                            console.error('Error during restore:', err);
                                             showToast('Restore gagal: ' + err.message, 'error');
                                         }
                                         event.target.value = '';
                                     };
+                                    
+                                    reader.onerror = function(e) {
+                                        console.error('FileReader error:', e);
+                                        showToast('Gagal membaca file: ' + e.message, 'error');
+                                        event.target.value = '';
+                                    };
+                                    
                                     reader.readAsText(file);
                                 }
                                 </script>
@@ -1337,7 +1425,10 @@ tfoot td {
     <!-- Info Pembuat Aplikasi -->
     <div style="width:100%;text-align:center;font-size:12px;color:#888;margin:32px 0 8px 0;letter-spacing:0.2px;">
         Create by : GHOST SCRIPT Development Team KRC - 2026<br>
-        <span style="color:#1764d6;font-size:12px;"># supriantozero@gmail.com</span>
+        <span style="color:#1764d6;font-size:12px;"># supriantozero@gmail.com</span><br>
+        <span style="color:#27ae60;font-size:11px;margin-top:4px;display:inline-block;">
+            ✓ Update Bug Fixed: Timeline & Daftar Real Data, Google Sheets Integration Removed (04/03/2026)
+        </span>
     </div>
     <!-- SheetJS (XLSX) untuk ekspor Excel -->
     <!-- jsPDF dan autoTable untuk ekspor PDF -->
@@ -1345,21 +1436,212 @@ tfoot td {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script>
-                        // --- FITUR RIWAYAT PERUBAHAN DATA ---
+        // ==============================================
+        // === IndexedDB Helper Functions ===
+        // ==============================================
+        // Database configuration
+        const DB_NAME = 'BeluiAppDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'appData';
+        
+        // Open/Create IndexedDB
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                
+                request.onerror = () => {
+                    console.error('IndexedDB error:', request.error);
+                    reject(request.error);
+                };
+                
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                        console.log('IndexedDB object store created');
+                    }
+                };
+            });
+        }
+        
+        // Get data from IndexedDB
+        async function dbGet(key) {
+            try {
+                const db = await openDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get(key);
+                    
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (err) {
+                console.error('dbGet error:', err);
+                return null;
+            }
+        }
+        
+        // Set data to IndexedDB
+        async function dbSet(key, value) {
+            try {
+                const db = await openDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.put(value, key);
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (err) {
+                console.error('dbSet error:', err);
+                throw err;
+            }
+        }
+        
+        // Remove data from IndexedDB
+        async function dbRemove(key) {
+            try {
+                const db = await openDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.delete(key);
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (err) {
+                console.error('dbRemove error:', err);
+            }
+        }
+        
+        // Migrate data from localStorage to IndexedDB
+        async function migrateToIndexedDB() {
+            console.log('Checking for data migration...');
+            
+            // Check if data exists in localStorage
+            const localData = localStorage.getItem('belui_padiSawahData');
+            const localTargets = localStorage.getItem('belui_padiSawahTargets');
+            const localHistory = localStorage.getItem('belui_padiSawahHistory');
+            const localNotifLog = localStorage.getItem('belui_padiSawahNotifLog');
+            
+            if (localData || localTargets || localHistory || localNotifLog) {
+                console.log('Migrating data from localStorage to IndexedDB...');
+                try {
+                    if (localData) {
+                        await dbSet('padiSawahData', localData);
+                        console.log('Migrated padiSawahData:', (localData.length / 1024).toFixed(2), 'KB');
+                    }
+                    if (localTargets) {
+                        await dbSet('padiSawahTargets', localTargets);
+                        console.log('Migrated padiSawahTargets:', (localTargets.length / 1024).toFixed(2), 'KB');
+                    }
+                    if (localHistory) {
+                        await dbSet('historyLog', localHistory);
+                        console.log('Migrated historyLog:', (localHistory.length / 1024).toFixed(2), 'KB');
+                    }
+                    if (localNotifLog) {
+                        await dbSet('notifLog', localNotifLog);
+                        console.log('Migrated notifLog:', (localNotifLog.length / 1024).toFixed(2), 'KB');
+                    }
+                    
+                    // Clear from localStorage after successful migration
+                    localStorage.removeItem('belui_padiSawahData');
+                    localStorage.removeItem('belui_padiSawahTargets');
+                    localStorage.removeItem('belui_padiSawahHistory');
+                    localStorage.removeItem('belui_padiSawahNotifLog');
+                    console.log('Migration completed, localStorage cleared');
+                    
+                    // Mark migration as done
+                    localStorage.setItem('belui_migrated_to_indexeddb', 'true');
+                } catch (err) {
+                    console.error('Migration failed:', err);
+                }
+            } else {
+                console.log('No data to migrate or already migrated');
+            }
+        }
+        
+        // Wrapper functions for easy use
+        async function getPadiSawahData() {
+            const data = await dbGet('padiSawahData');
+            return data || '{}';
+        }
+        
+        async function setPadiSawahData(jsonString) {
+            await dbSet('padiSawahData', jsonString);
+        }
+        
+        async function getPadiSawahTargets() {
+            const data = await dbGet('padiSawahTargets');
+            return data || '{}';
+        }
+        
+        async function setPadiSawahTargets(jsonString) {
+            await dbSet('padiSawahTargets', jsonString);
+        }
+        
+        async function getHistoryLogDB() {
+            const data = await dbGet('historyLog');
+            return data || '[]';
+        }
+        
+        async function setHistoryLogDB(jsonString) {
+            await dbSet('historyLog', jsonString);
+        }
+        
+        async function getNotifLogDB() {
+            const data = await dbGet('notifLog');
+            return data || '[]';
+        }
+        
+        async function setNotifLogDB(jsonString) {
+            await dbSet('notifLog', jsonString);
+        }
+        
+        // ==============================================
+        // === End of IndexedDB Helper Functions ===
+        // ==============================================
+
+        // Cache untuk targets agar bisa diakses synchronously
+        let targetsCache = {};
+        let historyLogCache = [];
+        let notifLogCache = [];
+        
+        // Load targets cache dari IndexedDB
+        async function refreshTargetsCache() {
+            const targetsStr = await getPadiSawahTargets();
+            targetsCache = JSON.parse(targetsStr);
+            console.log('Targets cache refreshed:', Object.keys(targetsCache).length, 'entries');
+        }
+
+        // --- FITUR RIWAYAT PERUBAHAN DATA ---
 // --- RIWAYAT NOTIFIKASI MODULAR ---
 function getHistoryLog() {
-    return JSON.parse(localStorage.getItem('belui_padiSawahHistory') || '[]');
+    return historyLogCache;
 }
-function addHistoryLog(action, tanggal, before, after) {
-    const log = getHistoryLog();
-    log.push({
+
+async function addHistoryLog(action, tanggal, before, after) {
+    historyLogCache.push({
         waktu: new Date().toISOString(),
         aksi: action,
         tanggal,
         sebelum: before,
         sesudah: after
     });
-    localStorage.setItem('belui_padiSawahHistory', JSON.stringify(log));
+    
+    // Batasi ukuran cache (maksimal 1000 entri untuk menghindari terlalu besar)
+    if (historyLogCache.length > 1000) {
+        historyLogCache = historyLogCache.slice(-1000);
+    }
+    
+    await setHistoryLogDB(JSON.stringify(historyLogCache));
     updateNotifCount();
 }
 function showHistoryModal() {
@@ -1386,8 +1668,8 @@ function showHistoryModal() {
     logDiv.innerHTML = tabHtml + `<div id="tabContentRiwayat" style="background:#f6faff;border-radius:0 0 12px 12px;padding:0 0 8px 0;min-height:180px;"></div>`;
 
     function renderTabRiwayatData() {
-        // Selalu ambil data terbaru dari localStorage
-        const log = JSON.parse(localStorage.getItem('belui_padiSawahHistory') || '[]').slice().reverse();
+        // Selalu ambil data terbaru dari cache
+        const log = [...historyLogCache].reverse();
         const tabContent = document.getElementById('tabContentRiwayat');
         if (log.length === 0) {
             tabContent.innerHTML = '<div style="color:#888;text-align:center;padding:32px 0;">Belum ada riwayat perubahan.</div>';
@@ -1503,9 +1785,10 @@ function formatObj(obj) {
         return "<span style='display:inline-block;margin-right:8px;'><b>" + k + ":</b> " + v + "</span>";
     }).join(' ');
 }
-function clearHistoryLog() {
+async function clearHistoryLog() {
     if (confirm('Hapus seluruh riwayat notifikasi?')) {
-        localStorage.removeItem('belui_padiSawahHistory');
+        historyLogCache = [];
+        await setHistoryLogDB('[]');
         // Hapus juga notifikasi prediksi hari ini dari window.dataStore
         let today = new Date();
         today.setHours(0,0,0,0);
@@ -1561,10 +1844,10 @@ document.addEventListener('DOMContentLoaded', function(){
                     const ext = file.name.split('.').pop().toLowerCase();
                     if (ext === 'csv') {
                         const reader = new FileReader();
-                        reader.onload = function(e) {
+                        reader.onload = async function(e) {
                             try {
                                 const text = e.target.result;
-                                parseAndImportCSV(text);
+                                await parseAndImportCSV(text);
                             } catch (err) {
                                 showToast('Gagal membaca file CSV: ' + err, 'error');
                             }
@@ -1572,13 +1855,13 @@ document.addEventListener('DOMContentLoaded', function(){
                         reader.readAsText(file);
                     } else if (ext === 'xlsx' || ext === 'xls') {
                         const reader = new FileReader();
-                        reader.onload = function(e) {
+                        reader.onload = async function(e) {
                             try {
                                 const data = new Uint8Array(e.target.result);
                                 const workbook = XLSX.read(data, { type: 'array' });
                                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                                 const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                                parseAndImportSheet(json);
+                                await parseAndImportSheet(json);
                             } catch (err) {
                                 showToast('Gagal membaca file Excel: ' + err, 'error');
                             }
@@ -1590,13 +1873,13 @@ document.addEventListener('DOMContentLoaded', function(){
                     event.target.value = '';
                 }
 
-                function parseAndImportCSV(text) {
+                async function parseAndImportCSV(text) {
                     // Deteksi baris dan kolom, asumsikan header di baris pertama
                     const rows = text.split(/\r?\n/).map(r => r.split(','));
-                    parseAndImportSheet(rows);
+                    await parseAndImportSheet(rows);
                 }
 
-                function parseAndImportSheet(rows) {
+                async function parseAndImportSheet(rows) {
                     // Asumsi: header minimal ada kolom Tanggal, Panen, Bera, Olah Tanah, Tambah Tanam
                     if (!rows || rows.length < 2) {
                         showToast('File kosong atau format tidak valid.', 'error');
@@ -1635,29 +1918,16 @@ document.addEventListener('DOMContentLoaded', function(){
                             timestamp: Date.now()
                         };
                     }
-                    localStorage.setItem('belui_padiSawahData', JSON.stringify(window.dataStore));
+                    dataStore = window.dataStore;
+                    await setPadiSawahData(JSON.stringify(window.dataStore));
                     showToast(`Import selesai: ${imported} data baru, ${updated} diperbarui, ${skipped} dilewati.`, 'success');
                     populateFilters();
                     updateStats();
                     renderTable();
-                        // Kirim data baris ke Google Sheets setelah simpan dari form
-                        // Buat elemen <tr> sementara untuk dikirim
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
-                            <td>${tanggal}</td>
-                            <td>${luasPanen}</td>
-                            <td>${calculatePredictions(tanggal).luasPanen}</td>
-                            <td>${lahanBera}</td>
-                            <td>${calculatePredictions(tanggal).lahanBera}</td>
-                            <td>${lahanOlahTanah}</td>
-                            <td>${calculatePredictions(tanggal).lahanOlahTanah}</td>
-                            <td>${luasTambahTanam}</td>
-                            <td>${calculatePredictions(tanggal).luasTambahTanam}</td>
-                            <td>${gagalPanen ? 'Gagal Panen' : tundaTanam ? 'Tunda Tanam' : ''}</td>
-                            <td></td>
-                        `;
-                        sendRowToGoogleSheets(tr);
+                    // Refresh timeline after import
+                    if (typeof renderTimelineList === 'function') renderTimelineList();
                 }
+
         // Toast notification function (moved to top for global access)
         function showToast(message, type = 'success', duration = 2500) {
             const toast = document.getElementById('toast');
@@ -1779,26 +2049,32 @@ document.addEventListener('DOMContentLoaded', function(){
                             doc.save(`laporan-padi-sawah-${y}-${m}.pdf`);
                         }
                 // Backup data ke file JSON
-                function backupData() {
-                    const data = {
-                        padiSawahData: localStorage.getItem('belui_padiSawahData') || '{}',
-                        padiSawahTargets: localStorage.getItem('belui_padiSawahTargets') || '{}'
-                    };
-                    const now = new Date();
-                    const pad = n => n.toString().padStart(2, '0');
-                    const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-                    const filename = `Sipro_LTT_Belui_${dateStr}.json`;
-                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename;
-                    a.click();
-                    URL.revokeObjectURL(url);
+                async function backupData() {
+                    try {
+                        const data = {
+                            padiSawahData: await getPadiSawahData(),
+                            padiSawahTargets: await getPadiSawahTargets()
+                        };
+                        const now = new Date();
+                        const pad = n => n.toString().padStart(2, '0');
+                        const dateStr = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+                        const filename = `Sipro_LTT_Belui_${dateStr}.json`;
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        showToast('Backup berhasil!', 'success');
+                    } catch (err) {
+                        console.error('Backup error:', err);
+                        showToast('Backup gagal: ' + err.message, 'error');
+                    }
                 }
         // Initialize
 
-        let dataStore = JSON.parse(localStorage.getItem('belui_padiSawahData') || '{}');
+        let dataStore = {};
         window.dataStore = dataStore;
         // Proxy agar window.dataStore selalu sinkron
         function syncDataStore() {
@@ -1811,34 +2087,70 @@ document.addEventListener('DOMContentLoaded', function(){
         // Set tanggal hari ini sebagai default
         // Tidak membatasi tanggal, biarkan user memilih tanggal apapun
         // Set default value ke tanggal hari ini
-        const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
+        const defaultDateToday = new Date();
+        const yyyy = defaultDateToday.getFullYear();
+        const mm = String(defaultDateToday.getMonth() + 1).padStart(2, '0');
+        const dd = String(defaultDateToday.getDate()).padStart(2, '0');
         document.getElementById('tanggal').value = `${yyyy}-${mm}-${dd}`;
 
         // Load data saat halaman dimuat
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
+            // Migrate dari localStorage ke IndexedDB jika diperlukan
+            await migrateToIndexedDB();
+            
+            // Load data dari IndexedDB
+            const savedData = await getPadiSawahData();
+            dataStore = JSON.parse(savedData);
+            window.dataStore = dataStore;
+            console.log('Data loaded from IndexedDB:', Object.keys(dataStore).length, 'entries');
+            
+            // Load lokasi (kecamatan & desa) dari localStorage
+            const savedKecamatan = localStorage.getItem('belui_kecamatan') || '';
+            const savedDesa = localStorage.getItem('belui_desa') || '';
+            const kecamatanInput = document.getElementById('inputKecamatan');
+            const desaInput = document.getElementById('inputDesa');
+            if (kecamatanInput) kecamatanInput.value = savedKecamatan;
+            if (desaInput) desaInput.value = savedDesa;
+            if (savedKecamatan || savedDesa) {
+                console.log('Lokasi auto-loaded:', savedKecamatan, savedDesa);
+                updatePrintInfo(); // Update display info setelah load
+            }
+            
+            // Load targets cache
+            await refreshTargetsCache();
+            
+            // Load history log cache
+            const historyStr = await getHistoryLogDB();
+            historyLogCache = JSON.parse(historyStr);
+            console.log('History log loaded:', historyLogCache.length, 'entries');
+            
+            // Load notif log cache
+            const notifStr = await getNotifLogDB();
+            notifLogCache = JSON.parse(notifStr);
+            console.log('Notif log loaded:', notifLogCache.length, 'entries');
+            
             populateFilters();
             initTopTargetMenu();
             renderTable();
             updateStats();
             setShowAllButtonLabel();
+            
+            // Inisialisasi timeline setelah data dimuat
+            populateTimelineFilters();
+            
             // attach toggle handler to button (moved position)
             const btn = document.getElementById('btnShowAll');
             if (btn) btn.addEventListener('click', function(){ toggleShowAll(); setShowAllButtonLabel(); });
 
             // Tampilkan notifikasi hari ini saat aplikasi dibuka
-            const today = new Date();
-            const yyyy = today.getFullYear();
-            const mm = String(today.getMonth()+1).padStart(2,'0');
-            const dd = String(today.getDate()).padStart(2,'0');
-            const todayStr = `${yyyy}-${mm}-${dd}`;
-                let dataStoreToday = {};
+            const todayNotif = new Date();
+            const yyyyN = todayNotif.getFullYear();
+            const mmN = String(todayNotif.getMonth()+1).padStart(2,'0');
+            const ddN = String(todayNotif.getDate()).padStart(2,'0');
+            const todayStr = `${yyyyN}-${mmN}-${ddN}`;
                 let notif = [];
-                if (localStorage.getItem('belui_padiSawahData')) {
-                    dataStoreToday = JSON.parse(localStorage.getItem('belui_padiSawahData'));
-                    if (dataStoreToday[todayStr]) {
+                if (window.dataStore && Object.keys(window.dataStore).length > 0) {
+                    if (window.dataStore[todayStr]) {
                         notif.push('<b>Data untuk hari ini sudah ada!</b>');
                     } else {
                         notif.push('<b>Belum ada data untuk hari ini.</b>');
@@ -1926,9 +2238,7 @@ document.addEventListener('DOMContentLoaded', function(){
             saveData();
         });
 
-        function saveData() {
-              // Deklarasi notifLog
-              let notifLog = [];
+        async function saveData() {
             // --- VALIDASI LANJUTAN DATA ---
             const tanggal = document.getElementById('tanggal').value;
             // Validasi format tanggal
@@ -1972,47 +2282,30 @@ document.addEventListener('DOMContentLoaded', function(){
                 showToast('Alasan tunda tanam dan tanggal tanam baru wajib diisi dengan format benar.', 'error');
                 return;
             }
-            // ...existing code...
-                 const file = event && event.target && event.target.files ? event.target.files[0] : undefined;
-                 if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        try {
-                            const json = JSON.parse(e.target.result);
-                            if (json.padiSawahData && json.padiSawahTargets) {
-                                localStorage.setItem('belui_padiSawahData', json.padiSawahData);
-                                localStorage.setItem('belui_padiSawahTargets', json.padiSawahTargets);
-                                syncDataStore();
-                                showToast('Data berhasil direstore!', 'success');
-                                renderTable();
-                                updateStats();
-                                populateFilters();
-                            } else {
-                                alert('File backup tidak valid.');
-                            }
-                        } catch (err) {
-                            alert('Gagal membaca file backup: ' + err);
-                        }
-                    };
-                    reader.readAsText(file);
-                    // Reset input agar bisa upload file yang sama lagi jika perlu
-                    event.target.value = '';
-                    }
+            
+            try {
+                // Prediksi dan notifikasi
                 const pred = calculatePredictions(tanggal);
                 if (pred.luasPanen > 0 || pred.lahanBera > 0 || pred.lahanOlahTanah > 0 || pred.luasTambahTanam > 0) {
-                notifLog.push({
-                    tanggal: tanggal,
-                    prediksi: {
-                        luasPanen: pred.luasPanen,
-                        lahanBera: pred.lahanBera,
-                        lahanOlahTanah: pred.lahanOlahTanah,
-                        luasTambahTanam: pred.luasTambahTanam
-                    },
-                    waktu: Date.now()
-                });
-            }
-            localStorage.setItem('belui_padiSawahNotifLog', JSON.stringify(notifLog));
-            // Notifikasi khusus jika tanggal hari ini
+                    notifLogCache.push({
+                        tanggal: tanggal,
+                        prediksi: {
+                            luasPanen: pred.luasPanen,
+                            lahanBera: pred.lahanBera,
+                            lahanOlahTanah: pred.lahanOlahTanah,
+                            luasTambahTanam: pred.luasTambahTanam
+                        },
+                        waktu: Date.now()
+                    });
+                    
+                    // Batasi ukuran cache
+                    if (notifLogCache.length > 1000) {
+                        notifLogCache = notifLogCache.slice(-1000);
+                    }
+                    
+                    await setNotifLogDB(JSON.stringify(notifLogCache));
+                }
+                
                 // Update dataStore dengan data input
                 dataStore[tanggal] = {
                     luasPanen,
@@ -2027,35 +2320,35 @@ document.addEventListener('DOMContentLoaded', function(){
                     timestamp: Date.now()
                 };
                 window.dataStore = dataStore;
-                localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
-            const today = new Date();
-            const inputDate = new Date(tanggal);
-            today.setHours(0,0,0,0);
-            inputDate.setHours(0,0,0,0);
-            if (inputDate.getTime() === today.getTime()) {
-                showToast('Data untuk hari ini berhasil disimpan!', 'success');
-            } else {
-                showToast('Data berhasil disimpan!', 'success');
+                
+                // Save to IndexedDB
+                await setPadiSawahData(JSON.stringify(dataStore));
+                
+                // Add history log
+                await addHistoryLog(before ? 'Edit' : 'Tambah', tanggal, before, dataStore[tanggal]);
+                
+                // Notifikasi berhasil
+                const todayDate = new Date();
+                const inputDate = new Date(tanggal);
+                todayDate.setHours(0,0,0,0);
+                inputDate.setHours(0,0,0,0);
+                if (inputDate.getTime() === todayDate.getTime()) {
+                    showToast('Data untuk hari ini berhasil disimpan!', 'success');
+                } else {
+                    showToast('Data berhasil disimpan!', 'success');
+                }
+            } catch (err) {
+                console.error('Failed to save data:', err);
+                showToast('Gagal menyimpan data: ' + err.message, 'error');
+                return;
             }
-            // Kirim data ke Google Sheets setelah simpan
-            // Siapkan data baris sesuai urutan kolom tabel
-            const rowData = [
-                tanggal,
-                luasPanen,
-                calculatePredictions(tanggal).luasPanen,
-                lahanBera,
-                calculatePredictions(tanggal).lahanBera,
-                lahanOlahTanah,
-                calculatePredictions(tanggal).lahanOlahTanah,
-                luasTambahTanam,
-                calculatePredictions(tanggal).luasTambahTanam,
-                gagalPanen ? 'Gagal Panen' : tundaTanam ? 'Tunda Tanam' : ''
-            ];
-            sendRowToGoogleSheets(rowData);
+            // Data disimpan ke IndexedDB (lokal)
             resetForm();
             populateFilters();
             updateStats();
             renderTable();
+            // Refresh timeline after save
+            if (typeof renderTimelineList === 'function') renderTimelineList();
         }
 
         function resetForm() {
@@ -2080,15 +2373,18 @@ document.addEventListener('DOMContentLoaded', function(){
             }
         }
 
-        function deleteData(tanggal) {
+        async function deleteData(tanggal) {
             if (confirm('Apakah Anda yakin ingin menghapus data tanggal ' + formatDate(tanggal) + '?')) {
                 const before = dataStore[tanggal] ? { ...dataStore[tanggal] } : null;
                 delete dataStore[tanggal];
-                localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
-                addHistoryLog('Hapus', tanggal, before, null);
+                window.dataStore = dataStore;
+                await setPadiSawahData(JSON.stringify(dataStore));
+                await addHistoryLog('Hapus', tanggal, before, null);
                 populateFilters();
                 renderTable();
                 updateStats();
+                // Refresh timeline
+                if (typeof renderTimelineList === 'function') renderTimelineList();
                 showToast('Data berhasil dihapus!', 'success');
             } else {
                 showToast('Batal menghapus data.', 'warning');
@@ -2100,10 +2396,14 @@ document.addEventListener('DOMContentLoaded', function(){
                 if (confirm('Konfirmasi sekali lagi: Hapus semua data?')) {
                     dataStore = {};
                     window.dataStore = dataStore;
-                    localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
+                    setPadiSawahData(JSON.stringify(dataStore)).catch(err => {
+                        console.error('Failed to clear data:', err);
+                    });
                     populateFilters();
                     renderTable();
                     updateStats();
+                    // Refresh timeline
+                    if (typeof renderTimelineList === 'function') renderTimelineList();
                     showToast('Semua data berhasil dihapus!', 'success');
                 } else {
                     showToast('Batal menghapus semua data.', 'warning');
@@ -2326,7 +2626,7 @@ document.addEventListener('DOMContentLoaded', function(){
                             this.style.fontStyle = '';
                         }
                     });
-                    input.addEventListener('change', function(e) {
+                    input.addEventListener('change', async function(e) {
                         const date = this.getAttribute('data-date');
                         const field = this.getAttribute('data-field');
                         let val = parseFloat(this.value) || 0;
@@ -2348,9 +2648,13 @@ document.addEventListener('DOMContentLoaded', function(){
                         dataStore[date][field] = val;
                         dataStore[date].timestamp = Date.now();
                         let after = { ...dataStore[date] };
+                        
                         // Tambahkan ke riwayat notifikasi
-                        addHistoryLog('Edit (Tabel)', date, before, after);
-                        localStorage.setItem('belui_padiSawahData', JSON.stringify(dataStore));
+                        await addHistoryLog('Edit (Tabel)', date, before, after);
+                        
+                        // Save to IndexedDB
+                        await setPadiSawahData(JSON.stringify(dataStore));
+                        
                         // Konfirmasi otomatis: tampilkan ikon sukses
                         this.classList.add('input-success');
                         setTimeout(()=>this.classList.remove('input-success'), 1200);
@@ -2358,21 +2662,7 @@ document.addEventListener('DOMContentLoaded', function(){
                         renderTable();
                         updateStats();
                         updateUndoRedoStatus();
-                        // Kirim data baris ke Google Sheets
-                        // Ambil data baris dari input setelah perubahan inline edit
-                        const rowData = [
-                            date,
-                            dataStore[date].luasPanen,
-                            calculatePredictions(date).luasPanen,
-                            dataStore[date].lahanBera,
-                            calculatePredictions(date).lahanBera,
-                            dataStore[date].lahanOlahTanah,
-                            calculatePredictions(date).lahanOlahTanah,
-                            dataStore[date].luasTambahTanam,
-                            calculatePredictions(date).luasTambahTanam,
-                            dataStore[date].gagalPanen ? 'Gagal Panen' : dataStore[date].tundaTanam ? 'Tunda Tanam' : ''
-                        ];
-                        sendRowToGoogleSheets(rowData);
+                        // Data tersimpan otomatis ke IndexedDB
                     });
                     // Tambahkan style untuk konfirmasi otomatis dan error
                     const style = document.createElement('style');
@@ -2530,7 +2820,7 @@ document.addEventListener('DOMContentLoaded', function(){
             if (clearBtn) clearBtn.addEventListener('click', clearMonthlyTargetTop);
         }
 
-        function saveMonthlyTargetTop() {
+        async function saveMonthlyTargetTop() {
             const monthTop = document.getElementById('targetMonthTop');
             const yearTop = document.getElementById('targetYearTop');
             const tPanen = parseFloat(document.getElementById('monthlyTargetPanenTop').value) || 0;
@@ -2542,9 +2832,8 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             const key = `${yearTop.value}-${monthTop.value}`;
-            const targets = JSON.parse(localStorage.getItem('belui_padiSawahTargets') || '{}');
-            targets[key] = { targetPanen: tPanen, targetTanam: tTanam, kecamatan, desa };
-            localStorage.setItem('belui_padiSawahTargets', JSON.stringify(targets));
+            targetsCache[key] = { targetPanen: tPanen, targetTanam: tTanam, kecamatan, desa };
+            await setPadiSawahTargets(JSON.stringify(targetsCache));
             alert('Target bulan disimpan.');
             // mirror to filter selects and inputs
             const monthFilter = document.getElementById('filterMonthSelect');
@@ -2554,7 +2843,7 @@ document.addEventListener('DOMContentLoaded', function(){
             renderTable();
         }
 
-        function clearMonthlyTargetTop() {
+        async function clearMonthlyTargetTop() {
             const monthTop = document.getElementById('targetMonthTop');
             const yearTop = document.getElementById('targetYearTop');
             if (!monthTop || !yearTop || !monthTop.value || !yearTop.value) {
@@ -2562,10 +2851,9 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             const key = `${yearTop.value}-${monthTop.value}`;
-            const targets = JSON.parse(localStorage.getItem('belui_padiSawahTargets') || '{}');
-            if (targets[key]) {
-                delete targets[key];
-                localStorage.setItem('belui_padiSawahTargets', JSON.stringify(targets));
+            if (targetsCache[key]) {
+                delete targetsCache[key];
+                await setPadiSawahTargets(JSON.stringify(targetsCache));
             }
             document.getElementById('monthlyTargetPanenTop').value = '';
             document.getElementById('monthlyTargetTanamTop').value = '';
@@ -2834,7 +3122,7 @@ document.addEventListener('DOMContentLoaded', function(){
         }
 
         // Monthly targets storage: key padiSawahTargets -> { 'YYYY-MM': { targetPanen, targetTanam } }
-        function saveMonthlyTarget() {
+        async function saveMonthlyTarget() {
             const month = document.getElementById('filterMonthSelect');
             const year = document.getElementById('filterYearSelect');
             const fp = document.getElementById('filterTargetPanen');
@@ -2848,14 +3136,13 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             const key = `${year.value}-${month.value}`;
-            const targets = JSON.parse(localStorage.getItem('belui_padiSawahTargets') || '{}');
-            targets[key] = { targetPanen: tPanen, targetTanam: tTanam };
-            localStorage.setItem('belui_padiSawahTargets', JSON.stringify(targets));
+            targetsCache[key] = { targetPanen: tPanen, targetTanam: tTanam };
+            await setPadiSawahTargets(JSON.stringify(targetsCache));
             alert('Target bulan disimpan.');
             renderTable();
         }
 
-        function clearMonthlyTarget() {
+        async function clearMonthlyTarget() {
             const month = document.getElementById('filterMonthSelect');
             const year = document.getElementById('filterYearSelect');
             if (!month || !year || !month.value || !year.value) {
@@ -2863,10 +3150,9 @@ document.addEventListener('DOMContentLoaded', function(){
                 return;
             }
             const key = `${year.value}-${month.value}`;
-            const targets = JSON.parse(localStorage.getItem('belui_padiSawahTargets') || '{}');
-            if (targets[key]) {
-                delete targets[key];
-                localStorage.setItem('belui_padiSawahTargets', JSON.stringify(targets));
+            if (targetsCache[key]) {
+                delete targetsCache[key];
+                await setPadiSawahTargets(JSON.stringify(targetsCache));
             }
             const fp = document.getElementById('filterTargetPanen');
             const ft = document.getElementById('filterTargetTanam');
@@ -2882,8 +3168,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
         function loadMonthlyTarget(year, month) {
             const key = `${year}-${String(month).padStart(2,'0')}`;
-            const targets = JSON.parse(localStorage.getItem('belui_padiSawahTargets') || '{}');
-            return targets[key] || { targetPanen: 0, targetTanam: 0 };
+            return targetsCache[key] || { targetPanen: 0, targetTanam: 0 };
         }
 
         function getMonthlyTotals(year, month) {
@@ -3027,30 +3312,21 @@ document.addEventListener('DOMContentLoaded', function(){
                     // Attach lokasi input listeners once
                     const kecamatanInput = document.getElementById('inputKecamatan');
                     const desaInput = document.getElementById('inputDesa');
-                    if (kecamatanInput) kecamatanInput.addEventListener('input', updatePrintInfo);
-                    if (desaInput) desaInput.addEventListener('input', updatePrintInfo);
+                    if (kecamatanInput) {
+                        kecamatanInput.addEventListener('input', function() {
+                            localStorage.setItem('belui_kecamatan', this.value);
+                            updatePrintInfo();
+                        });
+                    }
+                    if (desaInput) {
+                        desaInput.addEventListener('input', function() {
+                            localStorage.setItem('belui_desa', this.value);
+                            updatePrintInfo();
+                        });
+                    }
         }
-    // --- INTEGRASI GOOGLE SHEETS DENGAN APPS SCRIPT WEB APPS ---
-    // Ganti dengan URL Web Apps Anda
-    const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzcE8qAM3OjnV5Ql8IhdDov9OwJl3CoCOcis4Ixav2-51KXqL8AbgCFJmsr4IlKEXtp/exec';
-
-    // Fungsi untuk mengirim data baris ke Google Sheets via Apps Script Web Apps
-    function sendRowToGoogleSheets(rowData) {
-        // rowData: array data sesuai urutan kolom
-        fetch(GOOGLE_APPS_SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify(rowData),
-            headers: { 'Content-Type': 'application/json' }
-        })
-        .then(res => res.text())
-        .then(txt => {
-            if (txt === 'OK') showToast('Data berhasil dikirim ke Google Sheet (Apps Script).', 'success');
-            else showToast('Gagal kirim data ke Apps Script: ' + txt, 'error');
-        })
-        .catch(err => showToast('Error Apps Script: ' + err, 'error'));
-    }
-    // --- END INTEGRASI GOOGLE SHEETS DENGAN APPS SCRIPT ---
     </script>
+    <!-- Data disimpan secara lokal menggunakan IndexedDB -->
     <!-- Gabungan seluruh JS aplikasi (main.js + script di index.html) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -3374,23 +3650,53 @@ document.addEventListener('DOMContentLoaded', function(){
             const y = yearSel.value;
             const m = monthSel.value;
             const daysInMonth = new Date(y, m, 0).getDate();
-            // Kumpulkan semua tanggal prediksi dan kategorinya
+            // Kumpulkan semua tanggal prediksi dan real data
             const steps = [];
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const pred = calculatePredictions(dateStr);
+                const real = dataStore[dateStr] || {};
+                
                 let tipe = null;
-                if (pred.luasPanen > 0) tipe = 'panen';
-                else if (pred.lahanBera > 0) tipe = 'bera';
-                else if (pred.lahanOlahTanah > 0) tipe = 'olah';
-                else if (pred.luasTambahTanam > 0) tipe = 'tanam';
+                let value = 0;
+                
+                // Prioritaskan data real, jika tidak ada gunakan prediksi
+                if ((real.luasPanen || 0) > 0) {
+                    tipe = 'panen';
+                    value = real.luasPanen;
+                } else if ((real.lahanBera || 0) > 0) {
+                    tipe = 'bera';
+                    value = real.lahanBera;
+                } else if ((real.lahanOlahTanah || 0) > 0) {
+                    tipe = 'olah';
+                    value = real.lahanOlahTanah;
+                } else if ((real.luasTambahTanam || 0) > 0) {
+                    tipe = 'tanam';
+                    value = real.luasTambahTanam;
+                } else {
+                    // Jika tidak ada data real, gunakan prediksi
+                    if (pred.luasPanen > 0) {
+                        tipe = 'panen';
+                        value = pred.luasPanen;
+                    } else if (pred.lahanBera > 0) {
+                        tipe = 'bera';
+                        value = pred.lahanBera;
+                    } else if (pred.lahanOlahTanah > 0) {
+                        tipe = 'olah';
+                        value = pred.lahanOlahTanah;
+                    } else if (pred.luasTambahTanam > 0) {
+                        tipe = 'tanam';
+                        value = pred.luasTambahTanam;
+                    }
+                }
+                
                 if (tipe) {
-                    steps.push({ date: dateStr, tipe, value: pred[{
+                    steps.push({ date: dateStr, tipe, value: value, isReal: (real[{
                         panen: 'luasPanen',
                         bera: 'lahanBera',
                         olah: 'lahanOlahTanah',
                         tanam: 'luasTambahTanam'
-                    }[tipe]] });
+                    }[tipe]] || 0) > 0 });
                 }
             }
             // Render stepper
@@ -3420,7 +3726,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     })();
                     html += `<div class="timeline-step ${step.tipe}">
                         <div class="timeline-dot${isToday ? ' today' : ''}" title="${step.tipe.charAt(0).toUpperCase()+step.tipe.slice(1)}">${idx+1}</div>
-                        <div class="timeline-label">${formatDate(step.date)}<br><span style='font-size:11px;color:#888;'>${step.tipe.charAt(0).toUpperCase()+step.tipe.slice(1)}<br>(${Number(step.value).toFixed(2)} Ha)</span></div>
+                        <div class="timeline-label">${formatDate(step.date)}<br><span style='font-size:11px;color:#888;'>${step.tipe.charAt(0).toUpperCase()+step.tipe.slice(1)}<br>(${Number(step.value).toFixed(2)} Ha)</span><br><span style='font-size:10px;color:${step.isReal ? '#27ae60' : '#e67e22'};font-weight:600;'>${step.isReal ? 'REAL' : 'PREDIKSI'}</span></div>
                     </div>`;
                     if (idx < steps.length-1) html += '<div class="timeline-connector"></div>';
                 });
@@ -3484,30 +3790,41 @@ document.addEventListener('DOMContentLoaded', function(){
             // Kode lama untuk grid ringkas:
             const panen = [], bera = [], olah = [], tanam = [];
             var totalPanenGrid = 0, totalBeraGrid = 0, totalOlahGrid = 0, totalTanamGrid = 0;
+            var totalPanenReal = 0, totalBeraReal = 0, totalOlahReal = 0, totalTanamReal = 0;
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const pred = calculatePredictions(dateStr);
-                if (pred.luasPanen > 0) panen.push(dateStr);
-                if (pred.lahanBera > 0) bera.push(dateStr);
-                if (pred.lahanOlahTanah > 0) olah.push(dateStr);
-                if (pred.luasTambahTanam > 0) tanam.push(dateStr);
+                const real = dataStore[dateStr] || {};
+                
+                // Cek prediksi atau real data
+                if (pred.luasPanen > 0 || (real.luasPanen || 0) > 0) panen.push(dateStr);
+                if (pred.lahanBera > 0 || (real.lahanBera || 0) > 0) bera.push(dateStr);
+                if (pred.lahanOlahTanah > 0 || (real.lahanOlahTanah || 0) > 0) olah.push(dateStr);
+                if (pred.luasTambahTanam > 0 || (real.luasTambahTanam || 0) > 0) tanam.push(dateStr);
+                
                 totalPanenGrid += pred.luasPanen || 0;
                 totalBeraGrid += pred.lahanBera || 0;
                 totalOlahGrid += pred.lahanOlahTanah || 0;
                 totalTanamGrid += pred.luasTambahTanam || 0;
+                
+                totalPanenReal += real.luasPanen || 0;
+                totalBeraReal += real.lahanBera || 0;
+                totalOlahReal += real.lahanOlahTanah || 0;
+                totalTanamReal += real.luasTambahTanam || 0;
             }
             function formatValue(val) {
                 const num = Number(val);
                 if (val === null || val === undefined || isNaN(num) || num === 0) return '-';
                 return num.toFixed(2);
             }
-            function formatList(arr, color, label, total, getVal, tipe) {
+            function formatList(arr, color, label, total, totalReal, getVal, tipe) {
                 if (arr.length === 0) return `<div style="min-width:160px;max-width:100%;margin-bottom:6px;padding:10px 12px 8px 12px;border-radius:8px;background:#f8fafc;border-left:4px solid ${color};color:#888;font-size:13px;">
                     <span style="font-weight:700;color:${color};">${label}</span><br><span style='font-size:12px;color:#888;'>Total: - Ha</span><br><span style="color:#aaa;">Tidak ada data</span>
                 </div>`;
                 return `<div style="min-width:160px;max-width:100%;margin-bottom:6px;padding:10px 12px 8px 12px;border-radius:8px;background:#f8fafc;border-left:4px solid ${color};font-size:13px;">
                     <span style="font-weight:700;color:${color};">${label}</span><br>
-                    <span style='font-size:12px;color:#888;'>Total Prediksi: ${formatValue(total)} Ha</span>
+                    <span style='font-size:12px;color:#e67e22;'>Total Prediksi: ${formatValue(total)} Ha</span><br>
+                    <span style='font-size:12px;color:#27ae60;font-weight:600;'>Total Real: ${formatValue(totalReal)} Ha</span>
                     <div style="margin-top:6px;">
                         <table style='width:100%;border-collapse:collapse;font-size:13px;'>
                             <thead>
@@ -3548,18 +3865,15 @@ document.addEventListener('DOMContentLoaded', function(){
             listDiv.innerHTML = `
                 <div style="margin-bottom:8px;font-weight:700;font-size:15px;color:#163b6e;">Daftar Prediksi & Realisasi Siklus (Bulan Ini)</div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px;align-items:start;">
-                    ${formatList(panen,'#f39c12','Panen', totalPanenGrid, d => getValFor(d,'panen'), 'panen')}
-                    ${formatList(bera,'#3498db','Bera', totalBeraGrid, d => getValFor(d,'bera'), 'bera')}
-                    ${formatList(olah,'#e74c3c','Olah Tanah', totalOlahGrid, d => getValFor(d,'olah'), 'olah')}
-                    ${formatList(tanam,'#27ae60','Tanam', totalTanamGrid, d => getValFor(d,'tanam'), 'tanam')}
+                    ${formatList(panen,'#f39c12','Panen', totalPanenGrid, totalPanenReal, d => getValFor(d,'panen'), 'panen')}
+                    ${formatList(bera,'#3498db','Bera', totalBeraGrid, totalBeraReal, d => getValFor(d,'bera'), 'bera')}
+                    ${formatList(olah,'#e74c3c','Olah Tanah', totalOlahGrid, totalOlahReal, d => getValFor(d,'olah'), 'olah')}
+                    ${formatList(tanam,'#27ae60','Tanam', totalTanamGrid, totalTanamReal, d => getValFor(d,'tanam'), 'tanam')}
                 </div>
             `;
         }
 
-        // Inisialisasi filter timeline saat halaman dimuat
-        window.addEventListener('DOMContentLoaded', () => {
-            populateTimelineFilters();
-        });
+        // Timeline akan diinisialisasi di event 'load' setelah data dimuat
     </script>
     <script>
         // Print handlers: do not modify filter values so selected month/year are printed as-is.
@@ -3613,36 +3927,5 @@ document.addEventListener('DOMContentLoaded', function(){
         setInterval(updateDateTime, 1000);
         updateDateTime();
     </script>
-<script>
-const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzzAYNfCIVHesJIEwfj8amkEKP1OrUoqWdf5-uPcmNfTIBgWLVksYByFPne63x8woLb/exec'; // Ganti dengan URL Web Apps Anda
-
-function sendRowToGoogleSheets(row) {
-    const cells = row.querySelectorAll('td');
-    let data = {
-        tanggal: cells[0]?.innerText || '',
-        panen_real: cells[1]?.innerText || '',
-        panen_prediksi: cells[2]?.innerText || '',
-        bera_real: cells[3]?.innerText || '',
-        bera_prediksi: cells[4]?.innerText || '',
-        olah_real: cells[5]?.innerText || '',
-        olah_prediksi: cells[6]?.innerText || '',
-        tanam_real: cells[7]?.innerText || '',
-        tanam_prediksi: cells[8]?.innerText || '',
-        keterangan: cells[9]?.innerText || ''
-    };
-    fetch(GOOGLE_SHEETS_URL, {
-        method: 'POST',
-        body: JSON.stringify(data),
-        headers: { 'Content-Type': 'application/json' }
-    })
-    .then(res => res.json())
-    .then(response => {
-        console.log('Data berhasil dikirim:', response);
-    })
-    .catch(err => {
-        console.error('Gagal mengirim data:', err);
-    });
-}
-</script>
 </body>
 </html>
